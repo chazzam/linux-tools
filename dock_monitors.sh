@@ -11,6 +11,8 @@ SCREEN_INTERNAL="LVDS"
 # Names of the external displays to use
 # One is configured to the left of Internal
 # Two is configured to the right of Internal
+# These should show up after running the 'setprovideroffloadsink'
+# and 'setprovideroutputsource' xrandr commands below
 EXTERNAL_ONE="DP-1-1"
 EXTERNAL_TWO="DP-1-2"
 
@@ -19,14 +21,14 @@ EXTERNAL_TWO="DP-1-2"
 DISCRETE="nouveau"
 
 # make sure both gpus are still available
-# Did you forge to load a module!?
+# Did you forget to load a module!?
 NV="$(xrandr --listproviders |grep -c $DISCRETE)";
 INTEL="$(xrandr --listproviders |grep -c Intel)";
 [ "$NV" != "" ] || ( echo "$DISCRETE device not found"; exit 1; );
 [ "$INTEL" != "" ] || ( echo "Intel device not found"; exit 1; );
 
 # requires RandR 1.4 or later
-# This is the "magic" that makes Nvidia Optimus work
+# This is the "magic" that makes Nvidia Optimus (and the AMD counterpart) work
 xrandr --setprovideroffloadsink $DISCRETE Intel;
 xrandr --setprovideroutputsource $DISCRETE Intel
 
