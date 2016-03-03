@@ -15,6 +15,7 @@ SCREEN_INTERNAL="LVDS"
 # and 'setprovideroutputsource' xrandr commands below
 EXTERNAL_ONE="DP-1-1"
 EXTERNAL_TWO="DP-1-2"
+EXTERNAL_TWO="VGA2"
 
 # Name of the discrete graphic card in `xrandr --listproviders`
 # nouveau - if using open source driver for Nvidia cards
@@ -24,8 +25,8 @@ DISCRETE="nouveau"
 # Did you forget to load a module!?
 NV="$(xrandr --listproviders |grep -c $DISCRETE)";
 INTEL="$(xrandr --listproviders |grep -c Intel)";
-[ "$NV" != "" ] || ( echo "$DISCRETE device not found"; exit 1; );
-[ "$INTEL" != "" ] || ( echo "Intel device not found"; exit 1; );
+[ "$NV" != "" ] || ( echo "$DISCRETE device not found"; false; ) || exit 1;
+[ "$INTEL" != "" ] || ( echo "Intel device not found"; false; ) || exit 1;
 
 # requires RandR 1.4 or later
 # This is the "magic" that makes Nvidia Optimus (and the AMD counterpart) work
@@ -36,8 +37,8 @@ xrandr --setprovideroutputsource $DISCRETE Intel
 # so we need to see if we have these extra displays available and connected
 EXT1="$(xrandr |grep $EXTERNAL_ONE|grep \ connected|cut -d\  -f1)"
 EXT2="$(xrandr |grep $EXTERNAL_TWO|grep \ connected|cut -d\  -f1)"
-[ "$EXT1" != "" ] || ( echo "$EXTERNAL_ONE not found"; exit 1; );
-[ "$EXT2" != "" ] || ( echo "$EXTERNAL_TWO not found"; exit 1; );
+[ "$EXT1" != "" ] || ( echo "$EXTERNAL_ONE not found"; false; ) || exit 1;
+[ "$EXT2" != "" ] || ( echo "$EXTERNAL_TWO not found"; false; ) || exit 1;
 
 # Kept having issues where the name of this would change
 # Sometimes its LVDS1, sometimes LVDS2
