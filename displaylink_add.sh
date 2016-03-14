@@ -1,7 +1,7 @@
 #!/bin/bash
 
-sudo systemctl start displaylink
-sleep 4
+#sudo systemctl start displaylink
+#sleep 4
 
 # Handle name changing of LVDS, and we base arrangement on the DP-1-1 screen
 LVDS="$(xrandr |grep LVDS|grep \ connected|cut -d\  -f1)"

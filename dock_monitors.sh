@@ -16,6 +16,8 @@ SCREEN_INTERNAL="LVDS"
 EXTERNAL_ONE="DP-1-1"
 EXTERNAL_TWO="DP-1-2"
 EXTERNAL_TWO="VGA2"
+GAMMA_EXTERNAL_TWO="--gamma 0.83:0.86:0.90"
+GAMMA_EXTERNAL_ONE=""
 
 # Name of the discrete graphic card in `xrandr --listproviders`
 # nouveau - if using open source driver for Nvidia cards
@@ -46,8 +48,8 @@ EXT2="$(xrandr |grep $EXTERNAL_TWO|grep \ connected|cut -d\  -f1)"
 LVDS="$(xrandr |grep $SCREEN_INTERNAL|grep \ connected|cut -d\  -f1)";
 
 # configure monitor layout!
-xrandr --output $EXT1 --auto --left-of $LVDS
-xrandr --output $EXT2 --auto --right-of $LVDS
-xrandr --output $LVDS --primary
+xrandr --output $EXT1 --auto --left-of $LVDS $GAMMA_EXTERNAL_ONE || exit 1;
+xrandr --output $EXT2 --auto --right-of $LVDS $GAMMA_EXTERNAL_TWO || exit 1;
+xrandr --output $LVDS --primary $GAMMA_LVDS || exit 1;
 
 # Consider adding another script to use `wmctrl` to auto-open and position windows
