@@ -16,6 +16,7 @@ SCREEN_INTERNAL="LVDS"
 EXTERNAL_ONE="DP-1-1"
 EXTERNAL_TWO="DP-1-2"
 EXTERNAL_TWO="VGA2"
+EXTERNAL_TWO="$(xrandr |grep VGA|grep \ connected|cut -d\  -f1)";
 GAMMA_EXTERNAL_TWO="--gamma 0.83:0.86:0.90"
 GAMMA_EXTERNAL_ONE=""
 
@@ -34,6 +35,7 @@ INTEL="$(xrandr --listproviders |grep -c Intel)";
 # This is the "magic" that makes Nvidia Optimus (and the AMD counterpart) work
 xrandr --setprovideroffloadsink $DISCRETE Intel;
 xrandr --setprovideroutputsource $DISCRETE Intel
+#xrandr --setprovideroutputsource Intel $DISCRETE
 
 # If we aren't in the dock, then do nothing!
 # so we need to see if we have these extra displays available and connected
