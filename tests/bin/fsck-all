@@ -47,7 +47,7 @@ fsck_busy_wait() {
 checkroot;
 autoaccept="$1"
 
-if [ -z $autoaccept ]; then
+if [ ! -z "$autoaccept" ]; then
   echo "Giving time for system to finish bringing up devices...";
   sleep 10
 fi;
