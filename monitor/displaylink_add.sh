@@ -4,7 +4,8 @@
 #sleep 4
 
 SERVICE_DISPLAYLINK="$(systemctl status displaylink|grep Active|cut -d\  -f5)"
-if [ "$SERVICE_DISPLAYLINK" = "inactive" ]; then
+MOD_UDL="$(lsmod|grep -o ^udlf*)"
+if [ "$SERVICE_DISPLAYLINK" = "inactive" ] && [ -z "$MOD_UDL" ]; then
   sleep 4;
   systemctl start displaylink;
   sleep 4;
@@ -27,6 +28,8 @@ DVI="$(xrandr |grep DVI|cut -d\  -f1)";
 # or try `gtf` or `cvt` to generate the modeline
 xrandr --newmode "1368x768_72.00"  104.73  1368 1448 1592 1816  768 769 772 801  -HSync +Vsync
 xrandr --addmode $DVI 1368x768_72.00
+xrandr --newmode "1368x768_59.90"  85.72  1368 1440 1584 1800  768 769 772 795  -HSync +Vsync
+xrandr --addmode $DVI 1368x768_59.90
 
 # Handle screen layout
 # If not in the dock, then add the displaylink to the left of the screen

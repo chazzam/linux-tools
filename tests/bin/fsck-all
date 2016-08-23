@@ -35,8 +35,8 @@ fsck_busy_wait() {
     logit="tee -a /tmp/fsck-output.log";
   fi;
   echo -e "\n\n\nRunning fsck on $TYPE filesystem at $vol";
-  local fsck_it="e2fsck $autoaccept -fc $vol";
-##  e2fsck $autoaccept -fc $vol 2>&1;
+  local fsck_it="e2fsck $autoaccept -fcck -E discard $vol";
+##  e2fsck $autoaccept -fcck $vol 2>&1;
 #  if [ ! -z "$logit" ]; then
     $fsck_it 2>&1 | $logit;
 #  else

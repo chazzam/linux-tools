@@ -159,9 +159,6 @@ smart_process() {
       fi;
       i=$(expr $i + 1);
     done;
-    for dr in "${ALL_SMART[@]}"; do
-      smart_check "$dr";
-    done;
     smart_wait;
   done;
 }
@@ -176,6 +173,7 @@ smart_running() {
 
 smart_wait() {
   echo "Running..."
+  local dr=
   local count=1;
   while [ "$count" -gt 0 ]; do
     local status=" "
@@ -194,6 +192,9 @@ smart_wait() {
     echo "  $(date -u '+%Y%m%d-%R')${status}...";
     [ "$count" -eq "0" ] && break;
     sleep 30;
+  done;
+  for dr in "${ALL_SMART[@]}"; do
+    smart_check "$dr";
   done;
   echo "Waiting 5 seconds before continuing... [ctrl + c] to exit if needed"
   sleep 5;
