@@ -21,7 +21,7 @@ SMARTCTL=$(which smartctl);
 
 list_sdxn() {
   checkroot;
-  SDX_VOLS="$(fdisk -l /dev/sd* 2>&1 | 
+  SDX_VOLS="$(fdisk -l /dev/sd* 2>&1 |
       grep Linux|grep -v LVM|awk '{print $1; }')
       ";
 }
@@ -54,14 +54,16 @@ identify_drives() {
     sleep 2;
   fi;
   echo "" > /tmp/drives_safe;
+  local adaptec_raw="$(ls -1 /dev/sg*|sed -e 's#/dev/sg0##;s#^\s*$##;s/sg\(\d\+\)/sg\1 -d sat/;')"
   local found_raw="$(smartctl --scan-open|grep -v '^#'|cut -d# -f1)"
   [ -z "$found_raw" ] && return 1;
   local drives_raw=""
-  readarray -t drives_raw <<<"$found_raw"
+  readarray -t drives_raw <<<"$found_raw $adaptec_raw"
 
   local i=0;
   for dr in "${drives_raw[@]}"; do
     [ -z "$(smartctl -a $dr|grep SMART|grep Available)" ] && continue;
+    [ -z "$(smartctl -a $dr|grep SMART|grep 'command failed')" ] || continue;
     echo "$dr" >> /tmp/drives_safe
     ALL_SMART[$i]="${dr%% }";
     ALL_SMART_ID[$i]="$(smartctl -a $dr|
