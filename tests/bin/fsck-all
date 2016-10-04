@@ -35,14 +35,13 @@ fsck_busy_wait() {
   # $1 - volume
   local vol="$1";
   local autoaccept="$2";
-  local logit="cat";
+  local logit="$LOG_DIR/$(date +%Y%m%d-%H%M)_fsck-output.log";
   if [ ! -z $autoaccept ]; then
     autoaccept='-y';
-    logit="tee -a /tmp/fsck-output.log";
   fi;
   echo -e "\n\n\nRunning fsck on $TYPE filesystem at $vol";
   local fsck_it="e2fsck $autoaccept $FSCK_ARGS $TRIM $vol";
-    $fsck_it 2>&1 | $logit;
+  script -c "$fsck_it 2>&1" $logit;
 }
 
 check_arguments() {
@@ -51,19 +50,13 @@ check_arguments() {
   TRIM="";
   for i in $@; do
     case $i in
-      short)
-      SHORT)
-      Short)
+      short|SHORT|Short)
         FSCK_ARGS="$FSCK_ARGS_SHORT";
         ;;
-      yes)
-      YES)
-      Yes)
+      yes|YES|Yes)
         AUTOACCEPT="yes";
         ;;
-      trim)
-      TRIM)
-      Trim)
+      trim|TRIM|Trim)
         TRIM="$TRIM_ARGS";
         ;;
       *)
@@ -113,7 +106,8 @@ for vol in $SDX_VOLS $LVM_VOLS; do
   elif [ "$FILE_TYPE" = "swap" ] && [ ! -z "$FILE_TYPE" ]; then
     echo -e "\n\n\nNo need to check $FILE_TYPE filesystem at $vol, Skipping";
   else
-    echo -e "\n\n\nNot checking $FILE_TYPE filesystem at $vol, not supported
+    echo -e "\n\n\nNot checking $FILE_TYPE filesystem at $vol, not supported";
+  fi
 done;
 if [ ! -z $AUTOACCEPT ]; then
   echo -e "\n\n\nPress Enter to reboot. [ctrl + c] to exit."

@@ -18,6 +18,8 @@
 
 SUDO=$(which sudo);
 SMARTCTL=$(which smartctl);
+LOG_DIR="/tmp/tools"
+[ -d $LOG_DIR ] || mkdir -p $LOG_DIR
 
 list_sdxn() {
   checkroot;
