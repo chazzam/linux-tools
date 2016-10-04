@@ -66,6 +66,7 @@ identify_drives() {
     [ -z "$(smartctl -a $dr|grep SMART|grep Available)" ] && continue;
     [ -z "$(smartctl -a $dr|grep SMART|grep 'command failed')" ] || continue;
     [ -z "$(smartctl -a $dr|grep SMART|grep 'self-assessment')" ] && continue;
+    dr="$(echo $dr|sed -e 's/^\s*//;s/\s*$//')"
     echo "$dr" >> /tmp/drives_safe
     ALL_SMART[$i]="${dr%% }";
     ALL_SMART_ID[$i]="$(smartctl -a $dr|
