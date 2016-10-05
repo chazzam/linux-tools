@@ -20,18 +20,29 @@ packetloss_stats() {
     tr [:space:] ':'|\
     sed 's/:/00/')"
 
-  local loss="$(expr $(grep -v 0% $1 |\
-    cut -d, -f3|\
-    grep loss|\
-    sed -e 's/[^0-9]//g'|\
-    tr '\n' '+'|\
-    sed -e 's/+$//;s/+/ + /g;'))"
-  
-  # Catch pings that fail to return anything at all
-  local additional_loss="$(expr $(grep -v 0% $1 |\
-    cut -d, -f3|\
-    grep -v loss|\
-    wc -l))";
+  local loss=""
+  local additional_loss=""
+  if [ -z "$(grep -v 0% $1)" ]; then
+    loss=0
+    additional_loss=0
+  else
+    local loss_expr="$(grep -v 0% $1 |\
+      cut -d, -f3|\
+      grep loss|\
+      sed -e 's/[^0-9]//g'|\
+      tr '\n' '+'|\
+      sed -e 's/+$//;s/+/ + /g;')"
+    [ -z "$loss_expr" ] && 
+      loss=0 || loss="$(expr $loss_expr)"
+
+    # Catch pings that fail to return anything at all
+    local additional_expr="$(grep -v 0% $1 |\
+      cut -d, -f3|\
+      grep -v loss|\
+      wc -l)"
+    [ -z "$additional_expr" ] && 
+      additional_loss=0 || additional_loss="$(expr $additional_expr)"
+  fi;
 
   #loss="$(expr $additional_loss \* 100 + $loss)";
   loss="$(expr $additional_loss + $loss)";
@@ -45,7 +56,9 @@ if [ "$1" == "" ]; then
 fi
 
 if [ "$(which bc)" == "" ]; then
-  sudo -u tc tce-load -wi bc-1.06.94
+  sudo -u tc tce-load -wi bc || 
+    sudo -u tc tce-load -wi bc-1.06.94 ||
+    echo "ERROR: 'bc' unavailable" && exit 1
 fi
 
 packetloss_stats $1
