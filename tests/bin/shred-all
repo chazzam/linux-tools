@@ -29,6 +29,9 @@ if [ ! -z "$shred_args" ]; then
   echo "Giving time for system to finish bringing up devices...";
   sleep 10
 fi;
+if [ "$shred_args" = "long" ]; then
+  shred_args="-fvz -n 7"
+fi
 
 # Build list of standard volumes
 list_disks;
