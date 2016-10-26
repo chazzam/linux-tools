@@ -68,13 +68,20 @@ identify_drives() {
     [ -z "$(smartctl -a $dr|grep SMART|grep Available)" ] && continue;
     [ -z "$(smartctl -a $dr|grep SMART|grep 'command failed')" ] || continue;
     [ -z "$(smartctl -a $dr|grep SMART|grep 'self-assessment')" ] && continue;
-    dr="$(echo $dr|sed -e 's/^\s*//;s/\s*$//')"
-    echo "$dr" >> /tmp/drives_safe
-    ALL_SMART[$i]="${dr%% }";
-    ALL_SMART_ID[$i]="$(smartctl -a $dr|
+    local serial="$(smartctl -a $dr|
       grep -i 'serial number'|
       sed -e "s/\s\+/ /g"|
       cut -d\  -f3)";
+    # Don't add this again if it already exists
+    local exists_serial=0;
+    for x in "${ALL_SMART_ID[@]}"; do
+      [ "$x" = "$serial" ] && exists_serial=1 && break;
+    done;
+    [ "$exists_serial" = "1" ] && continue;
+    dr="$(echo $dr|sed -e 's/^\s*//;s/\s*$//')"
+    echo "$dr" >> /tmp/drives_safe
+    ALL_SMART[$i]="${dr%% }";
+    ALL_SMART_ID[$i]="$serial"
     ALL_CONVEYANCE[$i]="$($SMARTCTL -c $dr|
       grep -A10 'Offline data collection'|
       grep -A10 capabilities|
