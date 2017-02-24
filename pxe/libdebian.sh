@@ -1,4 +1,6 @@
 #!/bin/sh
+TFTP_ROOT=/srv/tftp
+
 DISTRO_UBUNTU="ubuntu"
 DISTRO_DEBIAN="debian"
 DISTRO_TITLE="Ubuntu"
@@ -11,9 +13,9 @@ DEB_RELEASES_DEBIAN="jessie stretch sid wheezy";
 DEB_ARCHES="i386 amd64"
 
 update_variables() {
-  DEB_ROOT="/srv/tftp/${DISTRO}-installer";
+  DEB_ROOT="$TFTP_ROOT/${DISTRO}-installer";
   DEB_MIRROR="http://${MIRROR_BASE}/${DISTRO}";
-  DEB_BOOTSCREENS="/srv/tftp/boot-screens/${DISTRO}.txt";
+  DEB_BOOTSCREENS="$TFTP_ROOT/boot-screens/${DISTRO}.txt";
 }
 
 get_releases() {
