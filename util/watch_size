@@ -1,0 +1,13 @@
+set -x
+size() {
+  echo "$(du -bs $1|cut -f1)";
+}
+
+watch_size() {
+  [ "$(size $1)" = "$WATCH_SIZE" ] && return 1;
+  WATCH_SIZE="$(size $1)";
+  echo "$WATCH_SIZE";
+}
+
+watch_size "$1";
+
