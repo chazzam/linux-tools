@@ -100,7 +100,7 @@ Menu Begin $rel
 EOR
   ) >> $DEB_BOOTSCREENS;
 
-    local append_line="vga=788 locale=en_US.UTF-8 keymap=us time/zone=US/Central clock-setup/utc=true clock-setup/ntp-server=us.pool.ntp.org grub-installer/only_debian=true protocol=http mirror/http/directory=/${DISTRO} mirror/country=manual mirror/http/proxy= mirror/http/hostname=${MIRROR_BASE}"
+    local append_line="vga=788 locale=en_US.UTF-8 keymap=us time/zone=US/Central clock-setup/utc=true clock-setup/ntp-server=us.pool.ntp.org netcfg/choose_interface=auto grub-installer/only_debian=true protocol=http debian-install/add-kernel-opts="" mirror/http/directory=/${DISTRO} mirror/country=manual mirror/http/proxy= mirror/http/hostname=${MIRROR_BASE}"
     if [ "ubuntu" = "$DISTRO" ]; then
       append_line="$append_line mirror/http/mirror=${MIRROR_BASE}"
     fi
@@ -122,11 +122,11 @@ EOR
       menu label ^Install
       menu default
       kernel ${DISTRO}-installer/$rel/$arch/linux
-      append initrd=${DISTRO}-installer/$rel/$arch/initrd.gz $append_line --- quiet 
+      append initrd=${DISTRO}-installer/$rel/$arch/initrd.gz $append_line ---
     label rescue
       menu label ^Rescue mode
       kernel ${DISTRO}-installer/$rel/$arch/linux
-      append initrd=${DISTRO}-installer/$rel/$arch/initrd.gz vga=788 rescue/enable=true --- quiet
+      append initrd=${DISTRO}-installer/$rel/$arch/initrd.gz vga=788 rescue/enable=true ---
   menu end
 
 EOA
