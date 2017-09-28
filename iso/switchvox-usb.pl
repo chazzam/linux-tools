@@ -7,9 +7,9 @@ use Getopt::Long qw(:config bundling);
 use Pod::Usage;
 
 # Required utilities:
-#  parted, fdisk, sfdisk, syslinux, losetup, cpio,
+#  parted, fdisk, syslinux, extlinux, losetup, cpio,
 #  find, mount, cp|rsync, mkdir, dd, wget|curl
-# packages: perl-doc, parted, rsync, syslinux, wget
+# packages: perl-doc, parted, rsync, syslinux, extlinux, wget
 
 # This will probably require running with elevated privileges (e.g. root)
 
@@ -33,7 +33,7 @@ pod2usage(-exitval => 0, -verbose => 1) if ($opts{'h'});
 pod2usage(-exitval => 0, -verbose => 2) if ($opts{'help'});
 
 my %profiles = (
-  'default' => {
+  'customers' => {
     'timezone' => "",
     'timeout' => $Default_Timeout,
     'root' => 0,
@@ -41,32 +41,30 @@ my %profiles = (
     'poweroff' => 0,
     'reboot' => 0,
   },
-  'est' => {
+  'production' => {
     'timezone' => "--utc America/New_York",
-    'timeout' => $Default_Timeout,
+    'timeout' => 60,
     'root' => 0,
     'tools' => 0,
     'poweroff' => 1,
     'reboot' => 0,
     'ontimeout' => 'switchvox',
   },
-  'cst' => {
+  'hsv' => {
     'timezone' => "--utc America/Chicago",
     'timeout' => $Default_Timeout,
     'root' => 0,
     'tools' => 0,
     'poweroff' => 1,
     'reboot' => 0,
-    'ontimeout' => 'switchvox',
   },
-  'pst' => {
+  'sd' => {
     'timezone' => "--utc America/Los_Angeles",
     'timeout' => $Default_Timeout,
     'root' => 0,
     'tools' => 0,
     'poweroff' => 1,
     'reboot' => 0,
-    'ontimeout' => 'switchvox',
   },
   'eng' => {
     'timezone' => "--utc America/Chicago",
@@ -81,7 +79,7 @@ my %profiles = (
     'timezone' => "--utc America/Chicago",
     'timeout' => $Default_Timeout,
     'root' => 0,
-    'tools' => 1,
+    'tools' => 0,
     'poweroff' => 1,
     'reboot' => 0,
     'all-kickstarts' => 1,
@@ -98,7 +96,7 @@ die "Must specify an existing and readable Switchvox ISO\n"
 # Verify that any specified profile is valid
 if (exists($opts{'profile'})) {
   # aliases
-  $opts{'profile'} = "default" if ($opts{'profile'} eq 'standard');
+  $opts{'profile'} = "customers" if ($opts{'profile'} eq 'customer');
 
   my $found = 0;
   foreach my $p (keys(%profiles)) {
@@ -160,9 +158,12 @@ sub find_syslinux_files($) {
     chomp(my $mbr = `$command`);
     $opts{'mbr_bin'} = $mbr if (-r $mbr);
 
-    $command = 'find '.$dir.' -name "menu.c32"|head -n1';
+    $command = 'find '.$dir.' -name "menu.c32"|grep bios';
     chomp(my $menu = `$command`);
     $opts{'menu_c32'} = $menu if (-r $menu);
+    $command = 'find '.$dir.' -name "libutil.c32"|grep bios';
+    chomp(my $libutil = `$command`);
+    $opts{'libutil_c32'} = $libutil;
   }
   if (
     exists($opts{'menu_c32'}) and -r $opts{'menu_c32'} and
@@ -172,6 +173,7 @@ sub find_syslinux_files($) {
   }
   else {
     delete $opts{'menu_c32'};
+    delete $opts{'libutil_c32'};
     delete $opts{'mbr_bin'};
   }
   return 0;
@@ -181,7 +183,7 @@ if ($Output_Image) {
   die "Must have losetup installed\n" unless (`which losetup` ne "");
 
   $opts{'loop-dev'} = '/dev/loop0' unless ( exists($opts{'loop-dev'}) );
-  die "Must have a valid loop device, e.g. /dev/loop0\n"
+  die "Must have a valid loop device, e.g. /dev/loop0\nTry: `modprobe loop`"
     unless (-e $opts{'loop-dev'});
   die "Loop device is in use, try a different device with --loop-dev\n"
     if (`losetup -a` =~ /$opts{'loop-dev'}/);
@@ -318,7 +320,8 @@ abort("Could not setup staging directory structure") if (($? >> 8) != 0);
 
 sub add_tools() {
   my $TOOLS_ROOT =
-    "http://example.internal/public/Switchvox/Tools/";
+    "http://hsv-pdc.digium.internal/public/Operations_Quality/".
+    "Production/Tools/";
   my $dir_tools = File::Spec->catfile(
     $dir_staging, "img", $Images_root, "tools"
   );
@@ -447,7 +450,7 @@ sub remaster_switchvox_kickstart() {
     $ks = File::Spec->catfile($dir_ks, $ks);
 
     # copy the base kickstart file to the new name
-    system($COPY.$ks_raw.' '.$ks);
+    system($COPY.' -q '.$ks_raw.' '.$ks);
     abort("Failed to copy kickstart file to staging") if (($? >> 8) != 0);
     system('sync');
 
@@ -480,7 +483,7 @@ sub remaster_switchvox_kickstart() {
     if (exists($profiles{$p}->{'root'}) and $profiles{$p}->{'root'}) {
       system("sed -i -e '".
         's#/sbin/chkconfig sshd .*##;'.
-        's#^rootpw.*$##;s#bootloader#rootpw blah\nbootloader#;'.
+        's#^rootpw.*$##;s#bootloader#rootpw digium\nbootloader#;'.
         's#perl -i -npe .*#/sbin/chkconfig sshd on\n'.
           'sed -i -e "s|^UsePAM yes$|UsePAM no|" /etc/ssh/sshd_config#;'.
         "' ".$ks
@@ -504,49 +507,71 @@ sub remaster_switchvox() {
   chomp(my $kernel = `find $dir_iso -name 'vmlinuz'|head -n1`);
   push(@files, $kernel);
   chomp(my $initrd = `find $dir_iso -name 'initrd.img'|head -n1`);
-
-  # crack open the initrd.img, and do any driver fixes needed.
   my $dir_init = File::Spec->catfile($dir_staging, "tmp/mnt");
-  chdir $dir_init;
-  system("gzip -dc $initrd 2>/dev/null | cpio -iud 2>/dev/null");
-  if (($? >> 8) != 0) {
-    system("cpio -iud < $initrd");
-    abort("failed to extract initrd image") if (($? >> 8) != 0);
-  }
 
-  # Workaround for an anaconda installer issue, credit shaun
-  my $raid_driver =
-    File::Spec->catfile($dir_init, "drivers/disk/aacraid_dd.img");
-  if (-e $raid_driver) {
-    my $dd = File::Spec->catfile($dir_init, "dd.img");
-    system($COPY.$raid_driver.' '.$dd);
-    abort("failed to copy raid driver into initrd") if (($? >> 8) != 0);
-  }
+  if ($opts{'swvx_version'} <= 72248) {
+    # crack open the initrd.img, and do any driver fixes needed.
+    chdir $dir_init;
+    chomp(my $init_type = `file $initrd`);
+    my $init_extract = "gzip -dc $initrd 2>/dev/null | cpio -iud 2>/dev/null";
+    if ($init_type =~ /LZMA/) {
+      $init_extract = "xz -dc $initrd 2>/dev/null | cpio -iud 2>/dev/null";
+    } elsif ($init_type =~ /cpio/) {
+      $init_extract = "cpio -iud < $initrd";
+    }
+    system($init_extract);
+    if (($? >> 8) != 0) {
+      abort("failed to extract initrd image") if (($? >> 8) != 0);
+    }
 
-  # Copy all of the kickstart files, or only the specified one
-  if (exists($opts{'all-kickstarts'}) and $opts{'all-kickstarts'}) {
-    push(@files, File::Spec->catfile($dir_staging, "tmp/ks/ks*.cfg") );
-    system($COPY.File::Spec->catfile($dir_staging, "tmp/ks/*").' '.$dir_init);
-  }
-  else {
-    system($COPY.$ks.' '.$dir_init);
-  }
-  abort("failed to copy kickstart file(s) into initrd") if (($? >> 8) != 0);
+    # Workaround for an anaconda installer issue, credit sruffell
+    my $raid_driver =
+      File::Spec->catfile($dir_init, "drivers/disk/aacraid_dd.img");
+    if (-e $raid_driver) {
+      my $dd = File::Spec->catfile($dir_init, "dd.img");
+      system($COPY.$raid_driver.' '.$dd);
+      abort("failed to copy raid driver into initrd") if (($? >> 8) != 0);
+    }
 
-  # Rebundle the initrd.img
-  my $dir_tmp = File::Spec->catfile($dir_staging, "tmp/");
-  my $new_initrd = File::Spec->catfile($dir_tmp, "initrd.img");
-  push(@files, $new_initrd);
-  system("find ./ | cpio -H newc -o > ".$new_initrd);
-  abort("failed to create updated initrd") if (($? >> 8) != 0);
-  chdir $dir_tmp;
-  system("sync;gzip -q ".$new_initrd."");
-  abort("failed to compress updated initrd") if (($? >> 8) != 0);
-  system("sync;mv ".$new_initrd.".gz ".$new_initrd);
-  abort("failed to rename initrd") if (($? >> 8) != 0);
+    # Copy all of the kickstart files, or only the specified one
+    if (exists($opts{'all-kickstarts'}) and $opts{'all-kickstarts'}) {
+      push(@files, File::Spec->catfile($dir_staging, "tmp/ks/ks*.cfg") );
+      system($COPY.File::Spec->catfile($dir_staging, "tmp/ks/*").' '.$dir_init);
+    }
+    else {
+      system($COPY.$ks.' '.$dir_init);
+    }
+    abort("failed to copy kickstart file(s) into initrd") if (($? >> 8) != 0);
+
+    # Rebundle the initrd.img
+    my $dir_tmp = File::Spec->catfile($dir_staging, "tmp/");
+    my $new_initrd = File::Spec->catfile($dir_tmp, "initrd.img");
+    push(@files, $new_initrd);
+    system("find ./ | cpio -H newc -o > ".$new_initrd);
+    abort("failed to create updated initrd") if (($? >> 8) != 0);
+    chdir $dir_tmp;
+    if ($init_type =~ /LZMA/) {
+      system("sync;xz -q ".$new_initrd."");
+    } else {
+      system("sync;gzip -q ".$new_initrd."");
+    }
+    abort("failed to compress updated initrd") if (($? >> 8) != 0);
+    if ($init_type =~ /LZMA/) {
+      system("sync;mv ".$new_initrd.".xz ".$new_initrd);
+    } else {
+      system("sync;mv ".$new_initrd.".gz ".$new_initrd);
+    }
+    abort("failed to rename initrd") if (($? >> 8) != 0);
+  } else {
+    my $new_initrd = File::Spec->catfile($dir_staging, "tmp/initrd.img");
+    system("ln -s $initrd $new_initrd");
+    push(@files, $new_initrd);
+  }
   chdir $CWD;
 
-  system('sync;'.$COPY.join(' ', @files).' '.$dir_swvx);
+  # This should be a link, not a copy
+  #~ system('sync;'.$COPY.join(' ', @files).' '.$dir_swvx);
+  system('sync;ln -s '.join(' ', @files).' '.$dir_swvx);
   abort("failed to copy files to image directory") if (($? >> 8) != 0);
   $dir_init = File::Spec->catfile($dir_init, "*");
   system("rm -rf ".$dir_init);
@@ -567,8 +592,8 @@ sub remaster_switchvox() {
 
   unless (exists($opts{'all-kickstarts'}) and $opts{'all-kickstarts'}) {
     # handle the base case of only one kickstart here
-    # Use the kickstart file embedded in the image in this case for simplicity
-    $ks = 'file:/'.$Kickstart;
+    $ks = File::Spec->catfile($dir_cfg, "ks.cfg");
+    $ks = 'hd:sdb1:'.$ks;
     $switchvox_label =~ s/ #menu#//;
     $switchvox_label =~ s/#label#//;
     $switchvox_label =~ s/#ks#/$ks/;
@@ -613,7 +638,7 @@ sub write_syslinux_cfg() {
   $syslinux_general{'prompt'} = 1;
   $syslinux_general{'timeout'} = $opts{'timeout'};
   if ($Output_Image) {
-    system($COPY.$opts{'menu_c32'}." ".$cfg_base);
+    system('ln -s '.$opts{'menu_c32'}." ".$opts{'libutil_c32'}." ".$cfg_base);
     abort("Couldn't copy syslinux utilities to staging") if (($? >> 8) != 0);
   }
 
@@ -652,7 +677,7 @@ sub create_usb_img() {
 
   # get size of img contents
   my $dir_image = File::Spec->catfile($dir_staging, "img");
-  chomp(my $size_contents = `du -bs $dir_image|awk '{print \$1}'`);
+  chomp(my $size_contents = `du -Lbs $dir_image|awk '{print \$1}'`);
   abort("Couldn't get size of image contents") unless ($size_contents);
 
   # Starting point just under the current required size
@@ -662,58 +687,74 @@ sub create_usb_img() {
   }
   abort("Created image too large") if ($heads > 255);
 
-  my $size_img = $base * $heads;
+  my $size_img = $base * ($heads + 1);
   my $img = $opts{'remaster-root'}.".img";
 
-  print "\n\nCreating $img\n\n";
+  print "\n\nCreating $img with $heads heads\n\n";
   system("dd if=/dev/zero of=".$img.
     " bs=64K count=".(int $size_img / (64 * 1024) + 1)
   );
   abort("Could not create image file") if (($? >> 8) != 0);
-  system("losetup ".$opts{'loop-dev'}." ".$img);
-  abort("Could not setup loop device") if (($? >> 8) != 0);
+  #~ system("losetup ".$opts{'loop-dev'}." ".$img);
+  #~ abort("Could not setup loop device") if (($? >> 8) != 0);
 
   local *my_abort = sub {
     system("sync;losetup -d ".$opts{'loop-dev'});
     abort(@_);
   };
 
-  system("parted --script ".$opts{'loop-dev'}." mklabel msdos");
+  #~ system("parted --script ".$opts{'loop-dev'}." mklabel msdos");
+  #~ system("parted -s ".$img." mklabel msdos");
+  my $command = "parted -ms ".$img.
+    " mklabel msdos".
+    " mkpart primary fat32 0% 100%".
+    " set 1 boot on".
+    " unit B print";
+  chomp(my $parted_table = `$command|tail -n1|cut -d: -f2-3|tr -d B`);
   my_abort("Could not create partition table") if (($? >> 8) != 0);
-  system("dd if=".$opts{'mbr_bin'}." of=".$opts{'loop-dev'});
+  #~ system("dd if=".$opts{'mbr_bin'}." of=".$opts{'loop-dev'});
+  #~ system("dd if=".$opts{'mbr_bin'}." of=".$img);
+  system("dd conv=notrunc bs=440 count=1 if=".$opts{'mbr_bin'}." of=".$img);
   my_abort("Could not copy mbr.bin") if (($? >> 8) != 0);
 
-  system("cat << EOF | fdisk ".$opts{'loop-dev'}." >/dev/null 2>&1
-n
-p
-1
+  #~ system("cat << EOF | fdisk ".$opts{'loop-dev'}." >/dev/null 2>&1
+  #~ system("cat << EOF | fdisk ".$img." >/dev/null 2>&1
+#~ n
+#~ p
+#~ 1
 
 
-t
-0b
-a
-1
-p
-w
-EOF
-");
-  my $check = 'fdisk -l '.$opts{'loop-dev'};
+#~ t
+#~ 0b
+#~ a
+#~ 1
+#~ p
+#~ w
+#~ EOF
+#~ ");
+  #~ my $check = 'fdisk -l '.$opts{'loop-dev'};
+  my $check = 'fdisk -l '.$img;
+  #~ my $check = 'parted -s '.$img." unit B print";
   $check = `$check`;
   my_abort("Error setting up partitions in image")
-    unless ($check =~ /W95 FAT32|FAT16/);
-  print $check."\n";
+    unless ($check =~ /W95 FAT32|FAT16|fat32/);
+  print "check:\n".$check."\n";
 
-  system("sync;losetup -d ".$opts{'loop-dev'});
-  abort("Could not tear down loop device") if (($? >> 8) != 0);
-  my $command = 'fdisk -l '.$img.' | tail -n1 |'.
-    "sed -e 's|\\*||;s|\\s\\s*| |g' | cut -d ' ' -f2-3";
-  chomp(my $start_sector = `$command`);
-  abort("Could not determine start & end sectors") if (($? >> 8) != 0);
-  my $end = 0;
-  ($start_sector, $end) = split(/ /, $start_sector);
-  # <sector start> * <sector size in bytes>
-  my $offset = $start_sector * $bytes;
-  $end = $end * $bytes; # convert to bytes
+  #~ system("sync;losetup -d ".$opts{'loop-dev'});
+  #~ abort("Could not tear down loop device") if (($? >> 8) != 0);
+  #~ my $command = 'fdisk -l '.$img.' |grep img1 |'.
+
+    #~ "sed -e 's|\\*||;s|\\s\\s*| |g' | cut -d ' ' -f2-3";
+  #~ chomp(my $start_sector = `$command`);
+  #~ print "start_sector:$start_sector; command:'$command'\n";
+  #~ abort("Could not determine start & end sectors")
+    #~ if (($? >> 8) != 0 or $start_sector eq "");
+  #~ my $end = 0;
+  #~ ($start_sector, $end) = split(/ /, $start_sector);
+  #~ # <sector start> * <sector size in bytes>
+  #~ my $offset = $start_sector * $bytes;
+  #~ $end = $end * $bytes; # convert to bytes
+  (my $offset, my $end) = split(/:/, $parted_table);
   print "using range: $offset - $end (bytes) for setting up partition\n";
   $command = "losetup -o ".$offset." --sizelimit ".$end." ".
     $opts{'loop-dev'}." ".$img;
@@ -727,6 +768,7 @@ EOF
   my_abort("Could not create filesystem in image") if (($? >> 8) != 0);
       #system("df -h | grep $opts{'loop-dev'}");
   my $dir_mnt = File::Spec->catfile($dir_staging, "tmp/mnt");
+  my $dir_mnt_syslinux = File::Spec->catfile($dir_mnt, "syslinux/");
   system("mount -t vfat -o group -o users ".$opts{'loop-dev'}." ".$dir_mnt);
   my_abort("Could not mount filesystem in image") if (($? >> 8) != 0);
 
@@ -738,15 +780,29 @@ EOF
   my $dir_img = File::Spec->catfile($dir_staging, "img/*");
   system('sync;'.$COPY.$dir_img.' '.$dir_mnt);
   mnt_abort("Could not copy contents to image") if (($? >> 8) != 0);
-  system("sync;".
-    "syslinux --directory /syslinux --stupid --install ".$opts{'loop-dev'}
-  );
-  mnt_abort("image syslinux installation failed") if (($? >> 8) != 0);
-  system("sync");
-
-  # Wrap up the image
+  # TODO: try installing with extlinux if it is installed
+  chomp(my $have_extlinux = `which extlinux`);
+  if ($have_extlinux ne "") {
+    $have_extlinux = 1;
+    print "Installing extlinux\n";
+    system("sync;extlinux -H $heads -S $sectors -i $dir_mnt_syslinux");
+    if (($? >> 8) != 0) {
+      $have_extlinux = 0;
+      print "extlinux failed, trying syslinux\n";
+    }
+  }# else { $have_extlinux = 0; }
+  print "Unmounting $dir_mnt\n";
   system("sync;umount ".$dir_mnt);
   my_abort("Could not unmount image") if (($? >> 8) != 0);
+  if (!$have_extlinux) {
+    print "Installing syslinux\n";
+    system("sync;".
+      "syslinux --directory /syslinux/ --stupid --install ".$opts{'loop-dev'}
+    );
+    my_abort("image syslinux installation failed") if (($? >> 8) != 0);
+  }
+
+  # Wrap up the image
   system("sync;losetup -d ".$opts{'loop-dev'});
   abort("Could not tear down partition loop device") if (($? >> 8) != 0);
   (my $filename, my $path) = fileparse($img);
@@ -816,7 +872,7 @@ switchvox-usb.pl [options] <input iso> [output base-name]
    --output, -o     specify output formats to generate:
                       img, tarball, tgz, zip
    --profile, -p    configuration profile to generate against:
-                      default, est, cst, pst, Ops, Eng
+                      Customers (default), Production, Hsv, SD, Ops, Eng
    --loop-dev, -l   specify an alternative loop device
    --syslinux       specify the syslinux install path
 

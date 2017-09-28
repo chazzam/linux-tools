@@ -1,0 +1,21 @@
+#!/bin/bash
+
+. /var/www/corelinux/tc-tools.sh
+
+TC_VERS="7"
+TC_ARCHES="x86 x86_64"
+#TC_MIRROR="$TC_MIRROR_ALT"
+
+#update_available_package_list "$1" 
+set -x;
+printf "Processing TC versions:'%s' and architectures:'%s'\n" "$TC_VERS" "$TC_ARCHES";
+#remove_failed_extensions "$TC_VERS";
+#download_tcz_lists "$TC_VERS" "$TC_MIRROR";
+update_release_dirs;
+#update_md5s "$TC_VERS" "$TC_MIRROR";
+#update_failed_extensions "$TC_VERS" "$TC_MIRROR";
+#remove_failed_extensions "$TC_VERS";
+
+chown -R www-data:www-data "$WEB_ROOT/$WEB_PATH";
+chmod -R g+w "$WEB_ROOT/$WEB_PATH";
+
