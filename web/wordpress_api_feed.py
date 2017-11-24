@@ -46,7 +46,7 @@ import requests
 # worst we get duplicates this read, and pull those new things next time.
 ## will need to periodically request a new ?per_page=per_page_value&page=N+1
 ## of the API once we consume all currently available entries
-## Check if the current page is already in the list (from existing rss feed import.) page-id@epoch-time
+## Check if the current page already in the list (from existing rss feed import.) page-id@epoch-time
 ### if it is, pop the current one out, then append the new one. (It may have been updated)
 ## process up to pages?per_page=per_page_value&page=ceil((max_page_entries + 1)/ per_page_value)
 # build rss feed on disk up to max_rss_entries, overwrite every run. (write newest first)
@@ -124,7 +124,7 @@ def get_options(argv=None):
         help='Wordpress Password (Warning: clear text)')
     opts.add_argument(
         '--site', '-s', default='',
-        help='Wordpress Site [https://wordpress.org]')
+        help='Wordpress Site (e.g. https://wordpress.org)')
     opts.add_argument(
         '--log-level', '-l', default='warning',
         choices=['critical', 'error', 'warning', 'info', 'debug', 'notset'],
@@ -133,40 +133,91 @@ def get_options(argv=None):
         '--options', '-O', nargs='*',
         help='Specify additional config file options [max_item_age_days=15 max_pages=100]')
 
+    logging.debug('Parsing argv: %s', argv)
     args = opts.parse_args(argv)
+    logging.debug('Parsed command-line args: %s', args)
     return args
 
 def update_options_with_args(options, args):
     """Update options from command-line args"""
-    #~ for key in top_options.keys():
-    for key in options:
-        if key not in args or vars(args)[key] is None or vars(args)[key] == '':
+    for key, val in vars(args):
+        logging.debug('Looping command-line args: "%s=%s"', key, val)
+        if key not in options or val is None or val == '':
             continue
-        options[key] = getattr(args, key)
+        if isinstance(options[key], int):
+            try:
+                val = int(val)
+            except TypeError:
+                logging.warning('Skipping invalid option: "%s=%s"', key, val)
+                continue
+        logging.debug('Updating options: "%s=%s"', key, val)
+        options[key] = val
 
     # Pull in any extra config file options from args
     if 'options' not in args or not args.options:
         return
-    index = 0
+    index = -1
     while index <= len(args.options):
+        logging.debug('Looping extended command-line args: "%s"', args.options[index])
         # Skip updating this option if command-line is blank
+        index += 1
         if args.options[index] == '':
-            index += 1
             continue
-        opt = []
-        if '=' in args.options[index]:
-            opt = args.options[index].split('=', 1)
-        else:
+        opt = args.options[index].split('=', 1)
+        if len(opt) != 2:
             # If not in format 'option=value' assume in format 'option value'
-            opt.append(args.options[index])
             index += 1
             # Handle edge case of last element in list
             if index > len(args.options):
                 break
-        index += 1
+            # Store the next element as our value
+            opt.append(args.options[index])
+
+        logging.debug('Detected extended command-line arg: "%s=%s"', opt[0], opt[1])
         if opt[0] not in options or opt[1] == '':
             continue
+        if isinstance(options[opt[0]], int):
+            try:
+                opt[1] = int(opt[1])
+            except TypeError:
+                logging.warning('Skipping invalid option: %s=%s', opt[0], opt[1])
+                continue
+        logging.debug('Updating options: "%s=%s"', opt[0], opt[1])
         options[opt[0]] = opt[1]
+
+def update_options_with_config(options, config):
+    """Update options from config file"""
+    # check for 'sites' section
+    # loop over items in config['sites'] as site
+    # if site does not exist as a section, continue
+    # loop over items in site as key,val
+    # if key not in options or val is '', continue
+    # if isinstance(options[key], int), val=int(val)
+    # options[key] = val
+    if 'sites' not in config:
+        logging.debug('Asked to update with config, but no sites')
+        return
+    for site in config['sites']:
+        logging.debug('Looping sites, currently: "%s=%s"', site, config['sites'][site])
+        # Skip a site if it isn't set to a recognized True value
+        try:
+            if not config.getboolean('sites', site):
+                continue
+        except ValueError:
+            continue
+        # process the site
+        for key, val in config[site]:
+            logging.debug('Looping config site options: "%s=%s"', key, val)
+            if key not in options or val == '':
+                continue
+            if isinstance(options[key], int):
+                try:
+                    val = int(val)
+                except TypeError:
+                    logging.warning('Skipping invalid option: %s=%s', key, val)
+                    continue
+            logging.debug('Updating options: "%s=%s"', key, val)
+            options[key] = val
 
 def process_site(options):
     """Parse site into feed"""
@@ -207,7 +258,7 @@ def main(argv=None):
 
     # Pull out the log level and setup the logger
     logging.basicConfig(
-        filename='/tmp/wordpress-api-feed.log',
+        filename=os.path.expanduser('~/wordpress-api-feed.log'),
         format='%(asctime)s %(Levelname)s#:%(message)s',
         level=args.log_level.upper())
     #~ logging.basicConfig(filename='/tmp/wordpress-api-feed.log')
@@ -220,17 +271,28 @@ def main(argv=None):
     config = configparser.SafeConfigParser()
     # This appears to return an empty config on invalid/non-existent files
     config.read(args.config)
+    # Handle no (valid) config
     if 'sites' not in config.sections():
         logging.warning('No sites detected in config file')
         # Process single site, with any command-line args given
         update_options_with_args(top_options, args)
-        logging.debug('Processing single site %s with options: %s', site, top_options)
-        return process_site(top_options)
-    
+        logging.debug(
+            'Processing single site %s with options: %s',
+            top_options['site'],
+            top_options)
+        status = process_site(top_options)
+        if status != 0:
+            logging.error('Single site %s failed to process: %s',
+                          top_options['site'],
+                          status)
+        return status
+
+    # Process all sites found in config file
     for site in config['sites']:
         site_options = top_options.copy()
         #  update site_options with site config
-        # Update top_options from standard args
+        update_options_with_config(site_options, config)
+        # Update site_options from command-line args
         update_options_with_args(site_options, args)
         logging.debug('Processing site %s with options: %s', site, site_options)
         #  process site into output
@@ -245,7 +307,7 @@ def main(argv=None):
 if __name__ == '__main__':
     # print(flush=True) requires python 3.3+
     # Usage of configparser assumes python 3.2+
-    # Usage of logging requires python 3.2+
+    # logging.basicConfig(level=[A-Z]+) requires python 3.2+
     if sys.hexversion < 0x03030000:
         print(
             '\n\nERROR: Requires Python 3.3.0 or newer\n',
